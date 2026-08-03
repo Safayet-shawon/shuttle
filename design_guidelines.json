@@ -1,0 +1,138 @@
+{
+  "theme_strategy": {
+    "concept": "The Modern Ivy League - Editorial & Trustworthy",
+    "primary_vibe": "Clean, university-official, trustworthy, minimalistic, with generous whitespace and muted tones.",
+    "color_archetype": "Organic & Earthy (Forest Green + Warm Cream)",
+    "mode": "light"
+  },
+  "colors": {
+    "primary": {
+      "DEFAULT": "#0F5132",
+      "foreground": "#FFFFFF",
+      "hover": "#146C43"
+    },
+    "secondary": {
+      "DEFAULT": "#E8F0EA",
+      "foreground": "#0F5132"
+    },
+    "background": {
+      "DEFAULT": "#F9F8F6",
+      "card": "#FFFFFF",
+      "alt": "#F0EFE9"
+    },
+    "text": {
+      "heading": "#1A211D",
+      "body": "#4A5550",
+      "muted": "#7A8A82"
+    },
+    "border": {
+      "DEFAULT": "#E2E8E5",
+      "focus": "#0F5132"
+    },
+    "chart": {
+      "color1": "#0F5132",
+      "color2": "#2E7D54",
+      "color3": "#5DA77F",
+      "color4": "#9ECFBA",
+      "color5": "#D1E8DD"
+    },
+    "status": {
+      "test_data_bg": "#FDF2F8",
+      "test_data_text": "#BE185D",
+      "test_data_border": "#FBCFE8"
+    }
+  },
+  "typography": {
+    "font_families": {
+      "heading": "Playfair Display, serif",
+      "body": "Manrope, sans-serif"
+    },
+    "rules": {
+      "h1": "text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight text-[#1A211D] leading-tight",
+      "h2": "text-2xl sm:text-3xl lg:text-4xl font-semibold tracking-tight text-[#1A211D]",
+      "h3": "text-xl sm:text-2xl font-medium text-[#1A211D]",
+      "body": "text-base leading-relaxed text-[#4A5550]",
+      "label": "text-sm font-semibold tracking-wide uppercase text-[#7A8A82]"
+    }
+  },
+  "spacing_and_layout": {
+    "section_padding": "py-16 md:py-24",
+    "container": "max-w-7xl mx-auto px-4 sm:px-6 lg:px-8",
+    "grid_bento": "grid grid-cols-1 md:grid-cols-4 gap-6",
+    "card_padding": "p-6 md:p-8"
+  },
+  "component_guidelines": {
+    "buttons": {
+      "primary": "bg-[#0F5132] text-white rounded-full px-6 py-3 font-medium hover:bg-[#146C43] transition-colors shadow-sm",
+      "outline": "border-2 border-[#0F5132] text-[#0F5132] rounded-full px-6 py-3 font-medium hover:bg-[#F9F8F6] transition-colors"
+    },
+    "cards": {
+      "default": "bg-white rounded-2xl border border-[#E2E8E5] shadow-sm hover:shadow-md transition-shadow duration-300",
+      "ai_forecast": "bg-gradient-to-br from-white to-[#F0EFE9] rounded-2xl border border-[#D1E8DD] shadow-sm p-6 relative overflow-hidden"
+    },
+    "form_elements": {
+      "input": "w-full rounded-xl border border-[#E2E8E5] bg-white px-4 py-3 text-base text-[#1A211D] focus:border-[#0F5132] focus:ring-1 focus:ring-[#0F5132] transition-all",
+      "selectable_card": "cursor-pointer rounded-xl border-2 p-4 transition-all hover:bg-[#F9F8F6] data-[state=checked]:border-[#0F5132] data-[state=checked]:bg-[#E8F0EA]"
+    },
+    "wizard_progress": {
+      "container": "flex items-center justify-between mb-8 relative",
+      "bar": "absolute top-1/2 left-0 h-1 bg-[#E2E8E5] w-full -z-10 -translate-y-1/2",
+      "bar_active": "absolute top-1/2 left-0 h-1 bg-[#0F5132] transition-all duration-500 -z-10 -translate-y-1/2",
+      "step": "w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm bg-white border-2 border-[#E2E8E5] text-[#7A8A82] data-[state=active]:border-[#0F5132] data-[state=active]:bg-[#0F5132] data-[state=active]:text-white"
+    },
+    "heatmap": {
+      "container": "grid grid-cols-6 gap-2 (1 for row labels, 5 for days)",
+      "cell": "aspect-square rounded-md flex items-center justify-center text-sm font-medium transition-colors",
+      "color_scale": "bg-[#0F5132] applied with dynamic inline style opacity (e.g., style={{ opacity: Math.max(0.1, occupancy / 100) }})"
+    },
+    "tables": {
+      "container": "w-full text-left border-collapse",
+      "header": "border-b border-[#E2E8E5] bg-[#F9F8F6] px-4 py-3 text-sm font-semibold text-[#7A8A82]",
+      "row": "border-b border-[#E2E8E5] hover:bg-[#F9F8F6] transition-colors",
+      "cell": "px-4 py-3 text-sm text-[#4A5550]",
+      "row_test_data": "bg-[#FDF2F8] hover:bg-[#FBCFE8]"
+    }
+  },
+  "page_specific_instructions": {
+    "landing_page": {
+      "hero": "Two-column layout on desktop. Left: Large Playfair Display heading, body text explaining the demand study, Primary and Outline CTA buttons. Right: Rounded image of campus/students or shuttle bus with subtle green overlay or border. Add a small 'Exclusive to verified @std.ewubd.edu' badge above the heading.",
+      "features": "Three-column grid below hero. Cards with icon (Bus, Clock, Dollar). Flat design, generous padding, minimal text."
+    },
+    "survey_wizard": {
+      "layout": "Center-aligned narrow container (max-w-2xl) to keep focus. Use the progress bar at the top.",
+      "email_step": "Input must validate against the regex ^\\d{4}-\\d-\\d{2}-\\d{3}@std\\.ewubd\\.edu$.",
+      "route_step": "Display routes as selectable cards. If a non-Chashara route is selected, show a friendly 'We will contact you soon' dead-end state.",
+      "days_step": "Grid of 5 selectable cards (Sunday to Thursday).",
+      "trips_step": "For each selected day, show available Up/Down times.",
+      "payment_step": "Dynamic pricing calculation based on one-way or round-trip and Monthly vs Semester.",
+      "fare_negotiation": "A toggle/radio for 'I agree' or 'I want cheaper'. If cheaper, reveal a numeric input field."
+    },
+    "admin_dashboard": {
+      "layout": "Sidebar with navigation and Month filter. Top right: Global Start/Stop survey toggle.",
+      "kpi_section": "Bento grid with 4 metric cards: Total Respondents, Revenue, Avg Seat Occupancy (calculated against 36 capacity), Peak Trip time.",
+      "charts_section": "Use Recharts for Bar (Day-wise demand), Line (Trip-wise demand), and Pie (Route demand).",
+      "heatmap_section": "Matrix of Days (Sun-Thu) vs Trips (Up/Down). Shade cells dynamically based on respondent count.",
+      "ai_forecast": "Place prominently in a wider card (col-span-full or half). Use Claude Sonnet 5 as mock data source, format with glowing edge or distinct layout.",
+      "data_table": "List survey responses. Implement visual highlight (pink background) if is_test_data is true."
+    }
+  },
+  "image_urls": {
+    "hero_bus": {
+      "url": "https://images.pexels.com/photos/27363161/pexels-photo-27363161.jpeg",
+      "description": "Green/White university shuttle bus to be used in the hero or feature section."
+    },
+    "campus_students": {
+      "url": "https://images.pexels.com/photos/7972324/pexels-photo-7972324.jpeg",
+      "description": "Students walking on campus, can be used for trust building or feature cards."
+    }
+  },
+  "UNIVERSAL_GUIDELINES_FOR_MAIN_AGENT": [
+    "You MUST NOT use Inter, Roboto, or standard Tailwind sans fonts for headings. Use Playfair Display.",
+    "Do NOT center align everything. Keep dense forms and dashboards left-aligned for scannability.",
+    "Use 2-3x more spacing than default. Apply p-6 or p-8 to cards, and py-16 to sections.",
+    "Do NOT use complete transparent backgrounds for overlays or navs. Use bg-white/90 backdrop-blur-xl.",
+    "Implement motion using Framer Motion for wizard step transitions (fade in/out, slide up).",
+    "For the Admin Dashboard, do not overuse cards. Keep the UI dense but structured with 1px borders (#E2E8E5) and no shadows.",
+    "Include 'data-testid' on all interactive elements (buttons, inputs, selectable cards)."
+  ]
+}
