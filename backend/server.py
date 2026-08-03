@@ -464,6 +464,62 @@ async def submit_survey(payload: SurveySubmit):
     return {"status": "ok", "survey": doc}
 
 
+@api.post("/survey/update")
+async def update_survey(payload: SurveySubmit):
+    """Let a student who already submitted a response update it in place."""
+    email = payload.email.strip().lower()
+    if not STUDENT_EMAIL_RE.match(email):
+        raise HTTPException(400, "Invalid EWU student email format.")
+    if await db.banned.find_one({"email": email}):
+        raise HTTPException(403, "Banned")
+    existing = await db.surveys.find_one({"email": email})
+    if not existing:
+        raise HTTPException(404, "No existing response found to edit. Please submit a new survey.")
+
+    route = next((r for r in ROUTES if r["id"] == payload.route_id), None)
+    if not route or not route.get("supported"):
+        raise HTTPException(400, "Editing supports only the active Chashara route.")
+    for d in payload.days:
+        if d not in DAYS:
+            raise HTTPException(400, f"Invalid day {d}")
+    if not payload.days:
+        raise HTTPException(400, "Choose at least one weekday.")
+    if payload.payment_plan not in FARES:
+        raise HTTPException(400, "Invalid payment plan.")
+
+    scope_start, scope_end = await get_scope_dates(payload.payment_plan, payload.month)
+    day_counts = await get_working_day_counts(scope_start, scope_end)
+    total, per_day = compute_price(payload.trips_per_day, payload.payment_plan, day_counts)
+    working_days_total = sum(day_counts.values())
+    now = datetime.now(timezone.utc)
+
+    updates = {
+        "name": payload.name.strip(),
+        "phone": payload.phone.strip(),
+        "month": payload.month,
+        "year": int(payload.month.split("-")[0]) if payload.month else existing.get("year"),
+        "route_id": payload.route_id,
+        "route_label": route["label"],
+        "days": payload.days,
+        "trips_per_day": payload.trips_per_day,
+        "payment_plan": payload.payment_plan,
+        "one_way_rate": FARES[payload.payment_plan]["one_way"],
+        "round_trip_rate": FARES[payload.payment_plan]["round_trip"],
+        "scope_start": scope_start,
+        "scope_end": scope_end,
+        "day_counts": day_counts,
+        "working_days_total": working_days_total,
+        "per_day_prices": per_day,
+        "total_price": total,
+        "fare_agreed": payload.fare_agreed,
+        "proposed_fare": payload.proposed_fare,
+        "updated_at": now.isoformat(),
+    }
+    await db.surveys.update_one({"email": email}, {"$set": updates})
+    doc = await db.surveys.find_one({"email": email}, {"_id": 0})
+    return {"status": "updated", "survey": doc}
+
+
 async def send_confirmation_email(doc: Dict[str, Any]):
     if not EMAIL_KEY:
         return

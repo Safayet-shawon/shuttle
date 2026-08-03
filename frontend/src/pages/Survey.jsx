@@ -34,6 +34,7 @@ export default function Survey() {
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(null);
   const [scheduleCounts, setScheduleCounts] = useState(null);
+  const [isEditing, setIsEditing] = useState(false);
 
   const [form, setForm] = useState({
     email: "",
@@ -125,8 +126,24 @@ export default function Survey() {
     }
   };
 
-  const startNew = () => {
-    toast.info("You already submitted a response. You cannot submit again.");
+  const startEdit = () => {
+    if (!previous) return;
+    setForm({
+      email: previous.email || form.email,
+      name: previous.name || "",
+      phone: previous.phone || "",
+      month: previous.month || MONTH_OPTIONS[0].value,
+      route_id: previous.route_id || "chashara_rampura",
+      days: previous.days || [],
+      trips_per_day: previous.trips_per_day || {},
+      payment_plan: previous.payment_plan || "monthly",
+      fare_agreed: previous.fare_agreed !== false,
+      proposed_fare: previous.proposed_fare != null ? String(previous.proposed_fare) : "",
+    });
+    setIsEditing(true);
+    setPrevious(null);
+    setStep(1);
+    toast.info("Loaded your previous response — edit any field and re-submit.");
   };
 
   const submit = async () => {
@@ -137,8 +154,9 @@ export default function Survey() {
         email: form.email.trim().toLowerCase(),
         proposed_fare: form.fare_agreed ? null : parseFloat(form.proposed_fare),
       };
-      const { data } = await api.post("/survey/submit", payload);
-      setDone(data);
+      const url = isEditing ? "/survey/update" : "/survey/submit";
+      const { data } = await api.post(url, payload);
+      setDone({ ...data, edited: isEditing });
     } catch (e) {
       toast.error(e?.response?.data?.detail || "Submission failed.");
     } finally {
@@ -170,8 +188,8 @@ export default function Survey() {
   if (done?.lead || done?.status === "lead_recorded") {
     return <ThankYouLead />;
   }
-  if (done?.status === "ok") {
-    return <ThankYou survey={done.survey} />;
+  if (done?.status === "ok" || done?.status === "updated") {
+    return <ThankYou survey={done.survey} edited={done.status === "updated" || done.edited} />;
   }
 
   const selectedRoute = config?.routes.find((r) => r.id === form.route_id);
@@ -191,7 +209,7 @@ export default function Survey() {
         </div>
 
         {/* Stepper */}
-        <div data-testid={SURVEY.stepIndicator} className="mb-10">
+        <div data-testid={SURVEY.stepIndicator} className="mb-6">
           <div className="flex items-center justify-between mb-3">
             <div className="eyebrow">Step {step + 1} of {STEPS.length}</div>
             <div className="text-sm text-[#4A5550]">{STEPS[step]}</div>
@@ -204,6 +222,19 @@ export default function Survey() {
           </div>
         </div>
 
+        {isEditing && step > 0 && (
+          <div
+            data-testid={SURVEY.editingBanner}
+            className="mb-6 rounded-xl border border-[#D1E8DD] bg-[#E8F0EA] px-4 py-3 flex items-center justify-between text-sm"
+          >
+            <div className="flex items-center gap-2 text-[#0F5132]">
+              <Check className="w-4 h-4" />
+              <span className="font-semibold">Editing your existing response</span>
+              <span className="text-[#4A5550]">— changes will overwrite your previous submission.</span>
+            </div>
+          </div>
+        )}
+
         {/* Body */}
         <div data-testid={SURVEY.root} className="rounded-2xl border border-[#E2E8E5] bg-white p-6 sm:p-10 fade-in" key={step}>
           {step === 0 && (
@@ -212,7 +243,7 @@ export default function Survey() {
               setEmail={(v) => setField("email", v)}
               previous={previous}
               lookup={lookup}
-              startNew={startNew}
+              startEdit={startEdit}
               example={config?.email_example}
             />
           )}
@@ -300,7 +331,7 @@ export default function Survey() {
                 className="rounded-full bg-[#0F5132] hover:bg-[#146C43] text-white px-8"
               >
                 {submitting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Check className="w-4 h-4 mr-2" />}
-                Submit response
+                {isEditing ? "Save changes" : "Submit response"}
               </Button>
             )}
           </div>
@@ -311,7 +342,7 @@ export default function Survey() {
 }
 
 // ============= Steps =============
-function StepEmail({ email, setEmail, previous, lookup, startNew, example }) {
+function StepEmail({ email, setEmail, previous, lookup, startEdit, example }) {
   return (
     <div>
       <div className="eyebrow mb-2">Step 1 · Verify</div>
@@ -355,15 +386,14 @@ function StepEmail({ email, setEmail, previous, lookup, startNew, example }) {
                 Submitted for <span className="font-semibold">{previous.month}</span> · Route: {previous.route_label} · Total ৳{Math.round(previous.total_price)}
               </div>
               <div className="text-[#7A8A82] text-xs mt-2">
-                Each student can respond once. If you need to change it, contact the shuttle office.
+                You can edit any field below and re-submit — your existing response will be updated in place.
               </div>
               <Button
-                data-testid={SURVEY.emailStartNew}
-                onClick={startNew}
-                variant="outline"
-                className="mt-3 rounded-full border-[#0F5132] text-[#0F5132] hover:bg-white"
+                data-testid={SURVEY.emailEditExisting}
+                onClick={startEdit}
+                className="mt-3 rounded-full bg-[#0F5132] hover:bg-[#146C43] text-white"
               >
-                Try to start new (blocked)
+                Edit my response
               </Button>
             </div>
           </div>

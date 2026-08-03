@@ -17,6 +17,8 @@ export const SURVEY = {
   emailContinue: "survey-email-continue",
   emailPreviousBanner: "survey-previous-banner",
   emailStartNew: "survey-start-new",
+  emailEditExisting: "survey-edit-existing",
+  editingBanner: "survey-editing-banner",
   nameInput: "survey-name-input",
   phoneInput: "survey-phone-input",
   monthSelect: "survey-month-select",
