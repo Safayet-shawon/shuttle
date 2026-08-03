@@ -33,6 +33,7 @@ export default function Survey() {
   const [previous, setPrevious] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(null);
+  const [scheduleCounts, setScheduleCounts] = useState(null);
 
   const [form, setForm] = useState({
     email: "",
@@ -51,25 +52,43 @@ export default function Survey() {
     api.get("/config").then((r) => setConfig(r.data)).catch(() => {});
   }, []);
 
+  // Live working-day counts (from admin calendar) drive the price preview
+  useEffect(() => {
+    if (!form.month || !form.payment_plan) return;
+    api
+      .get(`/schedule/counts?scope=${form.payment_plan}&month=${form.month}`)
+      .then((r) => setScheduleCounts(r.data))
+      .catch(() => setScheduleCounts(null));
+  }, [form.month, form.payment_plan]);
+
   const setField = (k, v) => setForm((f) => ({ ...f, [k]: v }));
 
   // ---------- Pricing calculation ----------
   const pricing = useMemo(() => {
-    if (!config) return { weekly: 0, total: 0, weeks: 0, breakdown: {} };
+    if (!config || !scheduleCounts) return { total: 0, breakdown: {}, workingDays: 0 };
     const plan = config.fares[form.payment_plan];
+    const counts = scheduleCounts.counts || {};
     const breakdown = {};
-    let weekly = 0;
+    let total = 0;
     for (const d of form.days) {
       const trips = form.trips_per_day[d] || [];
       if (trips.length === 0) continue;
       const hasUp = trips.some((t) => t.startsWith("UP"));
       const hasDown = trips.some((t) => t.startsWith("DOWN"));
-      const p = hasUp && hasDown ? plan.round_trip : plan.one_way;
-      breakdown[d] = { trips, price: p, type: hasUp && hasDown ? "round" : "one" };
-      weekly += p;
+      const rate = hasUp && hasDown ? plan.round_trip : plan.one_way;
+      const occ = counts[d] || 0;
+      const subtotal = rate * occ;
+      breakdown[d] = { trips, rate, occ, subtotal, type: hasUp && hasDown ? "round" : "one" };
+      total += subtotal;
     }
-    return { weekly, total: weekly * plan.weeks, weeks: plan.weeks, breakdown };
-  }, [form.days, form.trips_per_day, form.payment_plan, config]);
+    return {
+      total,
+      breakdown,
+      workingDays: scheduleCounts.total_working_days || 0,
+      scopeStart: scheduleCounts.start,
+      scopeEnd: scheduleCounts.end,
+    };
+  }, [form.days, form.trips_per_day, form.payment_plan, config, scheduleCounts]);
 
   // ---------- Step navigation ----------
   const canNext = useMemo(() => {
@@ -167,7 +186,7 @@ export default function Survey() {
             <ArrowLeft className="w-4 h-4" /> Back to landing
           </Link>
           <div className="flex items-center gap-2 text-[#7A8A82] text-sm">
-            <Bus className="w-4 h-4" /> EWU Shuttle Survey
+            <Bus className="w-4 h-4" /> Student Shuttle Survey
           </div>
         </div>
 
@@ -299,7 +318,7 @@ function StepEmail({ email, setEmail, previous, lookup, startNew, example }) {
       <h2 className="font-display text-3xl font-semibold text-[#1A211D]">Enter your EWU student ID email</h2>
       <p className="text-[#4A5550] mt-2">
         We use your student ID to make sure every response is unique.
-        Format: <span className="mono text-[#0F5132]">{example || "2022-1-80-014@std.ewubd.edu"}</span>
+        Format: <span className="mono text-[#0F5132]">{example || "2___-_-__-___@std.ewubd.edu"}</span>
       </p>
       <div className="mt-6 space-y-3">
         <Label htmlFor="email" className="text-xs uppercase tracking-wider text-[#7A8A82] font-semibold">Student email</Label>
@@ -307,7 +326,7 @@ function StepEmail({ email, setEmail, previous, lookup, startNew, example }) {
           <Input
             id="email"
             data-testid={SURVEY.emailInput}
-            placeholder="2022-1-80-014@std.ewubd.edu"
+            placeholder="2___-_-__-___@std.ewubd.edu"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             className="mono h-12 rounded-xl border-[#E2E8E5] focus:border-[#0F5132] focus:ring-1 focus:ring-[#0F5132]"
@@ -490,7 +509,7 @@ function StepDays({ days, selected, setSelected }) {
     <div>
       <div className="eyebrow mb-2">Step 4 · Weekdays</div>
       <h2 className="font-display text-3xl font-semibold text-[#1A211D]">Choose your ride for Fall 2026</h2>
-      <p className="text-[#4A5550] mt-2">Select every weekday you'd need the shuttle. Weekends are off.</p>
+      <p className="text-[#4A5550] mt-2">Pick every weekday you'll need the shuttle to match your class schedule. Fri/Sat & any admin-marked holidays are off automatically.</p>
       <div className="mt-6 grid grid-cols-2 sm:grid-cols-5 gap-3">
         {days.map((d) => {
           const on = selected.includes(d);
@@ -527,7 +546,7 @@ function StepTrips({ days, trips, value, setValue }) {
       <div className="eyebrow mb-2">Step 5 · Trips</div>
       <h2 className="font-display text-3xl font-semibold text-[#1A211D]">Pick trips for each day</h2>
       <p className="text-[#4A5550] mt-2">
-        Up-trips take you toward Rampura; down-trips take you back to Chashara. Combine both on the same day for a round trip.
+        Choose your times according to your class schedule. Up trips take you toward Rampura; down trips return you to Chashara. Combine both for a round trip.
       </p>
       <div className="mt-6 space-y-6">
         {days.map((d) => (
@@ -601,20 +620,29 @@ function StepPayment({ config, form, setField, pricing }) {
 
       {/* Live total */}
       <div className="mt-6 rounded-xl border border-[#0F5132] bg-[#0F5132] text-white p-5">
-        <div className="flex items-center justify-between">
+        <div className="flex items-start justify-between gap-4">
           <div>
             <div className="text-[11px] uppercase tracking-wider text-[#D1E8DD]">Your estimated total</div>
             <div className="font-display text-3xl font-semibold mt-1">৳ {Math.round(pricing.total)}</div>
             <div className="text-xs text-[#D1E8DD] mt-1">
-              ৳ {Math.round(pricing.weekly)} / week × {pricing.weeks} weeks
+              Across {pricing.workingDays} working days — Fri/Sat & holidays excluded.
+            </div>
+            <div className="text-[11px] text-[#D1E8DD] mt-1 mono">
+              {pricing.scopeStart} → {pricing.scopeEnd}
             </div>
           </div>
-          <div className="text-right text-sm text-[#D1E8DD]">
+          <div className="text-right text-xs text-[#D1E8DD] space-y-0.5">
             {Object.entries(pricing.breakdown).map(([d, b]) => (
-              <div key={d}>{d}: ৳{b.price} ({b.type === "round" ? "round" : "one-way"})</div>
+              <div key={d} className="mono">
+                {d}: ৳{b.rate} × {b.occ} = ৳{b.subtotal}
+              </div>
             ))}
           </div>
         </div>
+      </div>
+
+      <div className="mt-4 rounded-xl border border-[#D1E8DD] bg-[#E8F0EA] p-3 text-xs text-[#0F5132]">
+        The bus only runs on working days. Weekends and holidays marked by the shuttle office are excluded automatically — pick your trips to match your class schedule.
       </div>
 
       {/* Fare agreement */}
@@ -682,10 +710,10 @@ function StepReview({ form, pricing, config }) {
           </div>
         } />
         <ReviewRow label="Plan" value={config?.fares[form.payment_plan]?.label} />
-        <ReviewRow label="Weekly cost" value={`৳ ${Math.round(pricing.weekly)}`} />
+        <ReviewRow label="Working days in scope" value={`${pricing.workingDays} days`} />
         <ReviewRow
           label="Total"
-          value={<span className="font-display text-xl text-[#0F5132]">৳ {Math.round(pricing.total)} <span className="text-xs text-[#7A8A82]">/ {pricing.weeks} weeks</span></span>}
+          value={<span className="font-display text-xl text-[#0F5132]">৳ {Math.round(pricing.total)} <span className="text-xs text-[#7A8A82]">/ {pricing.workingDays} working days</span></span>}
         />
         <ReviewRow
           label="Fare"

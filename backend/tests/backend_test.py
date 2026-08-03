@@ -92,7 +92,10 @@ def test_config(s):
     assert d["fares"]["semester"]["one_way"] == 105
     assert isinstance(d["survey_started"], bool)
     assert d["email_regex"] == r"^\d{4}-\d-\d{2}-\d{3}@std\.ewubd\.edu$"
-    assert d["email_example"] == "2022-1-80-014@std.ewubd.edu"
+    assert d["email_example"] == "2___-_-__-___@std.ewubd.edu"
+    assert d["semester_label"] == "Fall 2026"
+    assert d["semester_start"] == "2026-09-01"
+    assert d["semester_end"] == "2026-12-31"
     supported = {r_["id"]: r_["supported"] for r_ in d["routes"]}
     assert supported["chashara_rampura"] is True
     assert supported["rampura_uttara_kuril"] is False
@@ -129,9 +132,14 @@ def test_submit_chashara_happy(s):
     r = s.post(f"{API}/survey/submit", json=body)
     assert r.status_code == 200, r.text
     d = r.json()["survey"]
-    # 230/day round trip × 1 day × 4 weeks = 920
-    assert d["total_price"] == 920
-    assert d["weekly_total"] == 230
+    # New pricing: 230 (round trip) × occurrences of Sunday in Feb 2026.
+    # Feb 2026 Sundays: 1, 8, 15, 22 = 4
+    assert d["total_price"] == 230 * 4
+    assert d["day_counts"]["Sunday"] == 4
+    assert d["per_day_prices"]["Sunday"]["rate"] == 230
+    assert d["per_day_prices"]["Sunday"]["occurrences"] == 4
+    assert d["per_day_prices"]["Sunday"]["subtotal"] == 920
+    assert d["per_day_prices"]["Sunday"]["type"] == "round_trip"
     assert d["is_test_data"] is True   # survey not started
     assert d["route_id"] == "chashara_rampura"
 

@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { ADMIN } from "@/constants/testIds";
 
 export default function AdminLogin() {
-  const [email, setEmail] = useState("admin@ewushuttle.com");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
@@ -39,7 +39,7 @@ export default function AdminLogin() {
               <Bus className="w-5 h-5" />
             </div>
             <div>
-              <div className="font-display text-lg font-semibold">EWU Shuttle</div>
+              <div className="font-display text-lg font-semibold">Student Shuttle</div>
               <div className="text-[10px] tracking-[0.18em] uppercase text-[#D1E8DD]">Admin panel</div>
             </div>
           </div>
@@ -62,9 +62,7 @@ export default function AdminLogin() {
         <form onSubmit={submit} className="w-full max-w-md rounded-2xl border border-[#E2E8E5] bg-white p-8 sm:p-10">
           <div className="eyebrow mb-2">Admin sign-in</div>
           <h2 className="font-display text-3xl font-semibold text-[#1A211D]">Welcome back.</h2>
-          <p className="text-[#4A5550] mt-2 text-sm">
-            Default: <span className="mono text-[#0F5132]">admin@ewushuttle.com</span> · <span className="mono text-[#0F5132]">Admin@123</span>. Change after first login.
-          </p>
+          <p className="text-[#4A5550] mt-2 text-sm">Sign in to access the demand dashboard.</p>
 
           <div className="mt-6 space-y-4">
             <div>
@@ -73,6 +71,7 @@ export default function AdminLogin() {
                 data-testid={ADMIN.loginEmail}
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
+                placeholder=""
                 className="mt-2 h-12 rounded-xl border-[#E2E8E5] focus:border-[#0F5132] focus:ring-1 focus:ring-[#0F5132] mono"
               />
             </div>

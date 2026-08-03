@@ -1,4 +1,4 @@
-"""EWU Shuttle Survey & Demand Analytics — Backend API.
+"""Student Shuttle Survey & Demand Analytics — Backend API.
 
 All business rules (fares, trip schedule, capacity) live here; the UI reads
 them from `/api/config` so nothing is hard-coded on the client.
@@ -13,7 +13,7 @@ import logging
 import os
 import re
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -44,7 +44,7 @@ JWT_ALG = "HS256"
 
 EMAIL_BASE_URL = "https://integrations.emergentagent.com"
 EMAIL_KEY = os.environ.get("EMERGENT_EMAIL_KEY", "")
-EMAIL_FROM_NAME = os.environ.get("EMAIL_FROM_NAME", "EWU Shuttle")
+EMAIL_FROM_NAME = os.environ.get("EMAIL_FROM_NAME", "Student Shuttle")
 EMERGENT_LLM_KEY = os.environ.get("EMERGENT_LLM_KEY", "")
 
 TRIPS = [
@@ -69,6 +69,16 @@ POSITIONING_LEGS = [
 ]
 
 DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday"]
+
+# Python's `date.weekday()` → 0=Mon … 6=Sun. Map back to weekday names we use.
+WEEKDAY_INDEX_TO_NAME = {
+    0: "Monday", 1: "Tuesday", 2: "Wednesday", 3: "Thursday",
+    4: "Friday", 5: "Saturday", 6: "Sunday",
+}
+DEFAULT_OFF_WEEKDAYS = {4, 5}  # Friday, Saturday — always off unless explicitly enabled
+DEFAULT_SEMESTER_START = "2026-09-01"
+DEFAULT_SEMESTER_END = "2026-12-31"
+DEFAULT_SEMESTER_LABEL = "Fall 2026"
 
 FARES = {
     "monthly":  {"one_way": 115, "round_trip": 230, "weeks": 4,
@@ -142,6 +152,17 @@ class LookupRequest(BaseModel):
     email: str
 
 
+class SemesterConfig(BaseModel):
+    label: str
+    start_date: str  # YYYY-MM-DD
+    end_date: str    # YYYY-MM-DD
+
+
+class ScheduleToggle(BaseModel):
+    date: str        # YYYY-MM-DD
+    is_working: bool
+
+
 # ---------- Utilities ----------
 def hash_pw(p: str) -> str:
     return bcrypt.hashpw(p.encode(), bcrypt.gensalt()).decode()
@@ -163,24 +184,109 @@ def issue_token(email: str) -> str:
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALG)
 
 
-def compute_price(trips_per_day: Dict[str, List[str]], payment_plan: str):
+def compute_price(
+    trips_per_day: Dict[str, List[str]],
+    payment_plan: str,
+    day_counts: Dict[str, int],
+):
+    """Price = Σ (per-day rate × number of times that weekday actually runs).
+
+    `day_counts` comes from admin's calendar — only working (green) days count.
+    """
     fare = FARES[payment_plan]
-    per_day_details: Dict[str, int] = {}
-    weekly_total = 0
+    per_day_details: Dict[str, Dict[str, Any]] = {}
+    total = 0
     for day, trips in trips_per_day.items():
         if not trips:
             continue
         has_up = any(t.startswith("UP") for t in trips)
         has_down = any(t.startswith("DOWN") for t in trips)
-        per_day = fare["round_trip"] if (has_up and has_down) else fare["one_way"]
-        per_day_details[day] = per_day
-        weekly_total += per_day
-    total = weekly_total * fare["weeks"]
-    return total, per_day_details, fare["weeks"], weekly_total
+        rate = fare["round_trip"] if (has_up and has_down) else fare["one_way"]
+        occurrences = int(day_counts.get(day, 0))
+        subtotal = rate * occurrences
+        per_day_details[day] = {
+            "rate": rate,
+            "occurrences": occurrences,
+            "subtotal": subtotal,
+            "type": "round_trip" if (has_up and has_down) else "one_way",
+        }
+        total += subtotal
+    return total, per_day_details
+
+
+def daterange(start_d: date, end_d: date):
+    """Inclusive iterator over dates from start_d to end_d."""
+    d = start_d
+    while d <= end_d:
+        yield d
+        d += timedelta(days=1)
+
+
+def parse_iso_date(s: str) -> date:
+    return datetime.strptime(s, "%Y-%m-%d").date()
+
+
+async def get_working_day_counts(start_iso: str, end_iso: str) -> Dict[str, int]:
+    """Return count of *working* days per weekday between start & end (inclusive).
+
+    Defaults: Sun–Thu working, Fri/Sat off. Admin overrides in
+    `working_day_overrides` collection change any specific date's flag.
+    """
+    counts = {d: 0 for d in DAYS}
+    if not start_iso or not end_iso:
+        return counts
+    start_d = parse_iso_date(start_iso)
+    end_d = parse_iso_date(end_iso)
+    if end_d < start_d:
+        return counts
+
+    overrides = await db.working_day_overrides.find(
+        {"date": {"$gte": start_iso, "$lte": end_iso}}, {"_id": 0}
+    ).to_list(None)
+    override_map = {o["date"]: bool(o.get("is_working", False)) for o in overrides}
+
+    for d in daterange(start_d, end_d):
+        weekday_name = WEEKDAY_INDEX_TO_NAME[d.weekday()]
+        default_working = d.weekday() not in DEFAULT_OFF_WEEKDAYS
+        is_working = override_map.get(d.isoformat(), default_working)
+        if is_working and weekday_name in counts:
+            counts[weekday_name] += 1
+    return counts
+
+
+async def get_scope_dates(payment_plan: str, month: Optional[str]) -> tuple:
+    """Return (start_iso, end_iso) for pricing scope.
+
+    Monthly plan → the calendar month the student is starting.
+    Semester plan → from that starting month up to semester end.
+    """
+    sem = await db.semester_config.find_one({"_key": "current"}, {"_id": 0}) or {}
+    sem_start = sem.get("start_date", DEFAULT_SEMESTER_START)
+    sem_end = sem.get("end_date", DEFAULT_SEMESTER_END)
+
+    if payment_plan == "semester":
+        if month:
+            month_start = f"{month}-01"
+            start = max(month_start, sem_start)
+        else:
+            start = sem_start
+        return start, sem_end
+
+    # monthly
+    if month:
+        year, mo = month.split("-")
+        year_i, mo_i = int(year), int(mo)
+        first = date(year_i, mo_i, 1)
+        if mo_i == 12:
+            last = date(year_i + 1, 1, 1) - timedelta(days=1)
+        else:
+            last = date(year_i, mo_i + 1, 1) - timedelta(days=1)
+        return first.isoformat(), last.isoformat()
+    return sem_start, sem_end
 
 
 # ---------- App ----------
-app = FastAPI(title="EWU Shuttle API")
+app = FastAPI(title="Student Shuttle API")
 api = APIRouter(prefix="/api")
 bearer = HTTPBearer(auto_error=False)
 
@@ -214,17 +320,25 @@ async def startup():
             "is_started": False,
             "updated_at": datetime.now(timezone.utc).isoformat(),
         })
+    if await db.semester_config.count_documents({}) == 0:
+        await db.semester_config.insert_one({
+            "_key": "current",
+            "label": DEFAULT_SEMESTER_LABEL,
+            "start_date": DEFAULT_SEMESTER_START,
+            "end_date": DEFAULT_SEMESTER_END,
+        })
 
 
 # ---------- Public endpoints ----------
 @api.get("/")
 async def root():
-    return {"service": "EWU Shuttle API", "status": "ok"}
+    return {"service": "Student Shuttle API", "status": "ok"}
 
 
 @api.get("/config")
 async def get_config():
     state = await db.survey_state.find_one({"_key": "state"}, {"_id": 0}) or {}
+    sem = await db.semester_config.find_one({"_key": "current"}, {"_id": 0}) or {}
     return {
         "trips": TRIPS,
         "positioning_legs": POSITIONING_LEGS,
@@ -233,9 +347,29 @@ async def get_config():
         "routes": ROUTES,
         "capacity": CAPACITY,
         "survey_started": bool(state.get("is_started", False)),
-        "semester": "Fall 2026",
+        "semester_label": sem.get("label", DEFAULT_SEMESTER_LABEL),
+        "semester_start": sem.get("start_date", DEFAULT_SEMESTER_START),
+        "semester_end": sem.get("end_date", DEFAULT_SEMESTER_END),
         "email_regex": r"^\d{4}-\d-\d{2}-\d{3}@std\.ewubd\.edu$",
-        "email_example": "2022-1-80-014@std.ewubd.edu",
+        "email_example": "2___-_-__-___@std.ewubd.edu",
+    }
+
+
+@api.get("/schedule/counts")
+async def public_schedule_counts(scope: str = "monthly", month: Optional[str] = None):
+    """Public: gives the front-end the per-weekday working-day counts so it
+    can show a live price preview during the survey.
+    """
+    scope = scope if scope in ("monthly", "semester") else "monthly"
+    start, end = await get_scope_dates(scope, month)
+    counts = await get_working_day_counts(start, end)
+    total = sum(counts.values())
+    return {
+        "scope": scope,
+        "start": start,
+        "end": end,
+        "counts": counts,
+        "total_working_days": total,
     }
 
 
@@ -243,7 +377,7 @@ async def get_config():
 async def survey_lookup(payload: LookupRequest):
     email = payload.email.strip().lower()
     if not STUDENT_EMAIL_RE.match(email):
-        raise HTTPException(400, "Please use a valid EWU student ID email (e.g., 2022-1-80-014@std.ewubd.edu).")
+        raise HTTPException(400, "Please use a valid EWU student ID email (format: 2___-_-__-___@std.ewubd.edu).")
     if await db.banned.find_one({"email": email}):
         raise HTTPException(403, "This student ID has been banned by the admin. Contact the shuttle office if this is a mistake.")
     existing = await db.surveys.find_one({"email": email}, {"_id": 0})
@@ -287,7 +421,10 @@ async def submit_survey(payload: SurveySubmit):
     if payload.payment_plan not in FARES:
         raise HTTPException(400, "Invalid payment plan.")
 
-    total, per_day, weeks, weekly_total = compute_price(payload.trips_per_day, payload.payment_plan)
+    scope_start, scope_end = await get_scope_dates(payload.payment_plan, payload.month)
+    day_counts = await get_working_day_counts(scope_start, scope_end)
+    total, per_day = compute_price(payload.trips_per_day, payload.payment_plan, day_counts)
+    working_days_total = sum(day_counts.values())
 
     state = await db.survey_state.find_one({"_key": "state"}) or {}
     is_started = bool(state.get("is_started", False))
@@ -308,8 +445,10 @@ async def submit_survey(payload: SurveySubmit):
         "payment_plan": payload.payment_plan,
         "one_way_rate": FARES[payload.payment_plan]["one_way"],
         "round_trip_rate": FARES[payload.payment_plan]["round_trip"],
-        "weeks": weeks,
-        "weekly_total": weekly_total,
+        "scope_start": scope_start,
+        "scope_end": scope_end,
+        "day_counts": day_counts,
+        "working_days_total": working_days_total,
         "per_day_prices": per_day,
         "total_price": total,
         "fare_agreed": payload.fare_agreed,
@@ -332,7 +471,7 @@ async def send_confirmation_email(doc: Dict[str, Any]):
         html = build_confirmation_html(doc)
         body = {
             "to": [doc["email"]],
-            "subject": "EWU Shuttle — Survey response received",
+            "subject": "Student Shuttle — Survey response received",
             "html": html,
             "from_name": EMAIL_FROM_NAME,
         }
@@ -353,7 +492,7 @@ def build_confirmation_html(doc: Dict[str, Any]) -> str:
     return f"""<!doctype html><html><body style="margin:0;font-family:Arial,Helvetica,sans-serif;background:#F9F8F6;padding:32px 16px;color:#1A211D;">
 <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="margin:0 auto;background:#FFFFFF;border-radius:16px;overflow:hidden;border:1px solid #E2E8E5;">
 <tr><td style="background:#0F5132;padding:28px 32px;color:#FFFFFF;">
-<div style="font-size:12px;letter-spacing:2px;text-transform:uppercase;opacity:0.85;">EWU Shuttle</div>
+<div style="font-size:12px;letter-spacing:2px;text-transform:uppercase;opacity:0.85;">Student Shuttle</div>
 <div style="font-size:22px;font-weight:600;margin-top:6px;">Thanks, {doc.get('name','Student')}. Response received.</div></td></tr>
 <tr><td style="padding:24px 32px;">
 <p style="color:#4A5550;line-height:1.6;margin:0 0 16px;">Here is a summary of your Fall 2026 shuttle preferences. This is provisional data — the shuttle office uses it to plan the pilot.</p>
@@ -362,7 +501,7 @@ def build_confirmation_html(doc: Dict[str, Any]) -> str:
 <tr><td style="padding:10px 14px;border-bottom:1px solid #E2E8E5;color:#7A8A82;font-size:13px;">Payment plan</td><td style="padding:10px 14px;border-bottom:1px solid #E2E8E5;color:#1A211D;font-size:13px;">{doc.get('payment_plan','').title()}</td></tr>
 <tr><td style="padding:10px 14px;border-bottom:1px solid #E2E8E5;color:#7A8A82;font-size:13px;">Estimated total</td><td style="padding:10px 14px;border-bottom:1px solid #E2E8E5;color:#1A211D;font-size:13px;">৳ {int(doc.get('total_price',0))} over {doc.get('weeks',0)} weeks</td></tr>
 {rows}</table>
-<p style="color:#7A8A82;font-size:12px;margin-top:24px;">If you didn't submit this response, reply to this email so we can remove it. — EWU Shuttle Team</p></td></tr></table></body></html>"""
+<p style="color:#7A8A82;font-size:12px;margin-top:24px;">If you didn't submit this response, reply to this email so we can remove it. — Student Shuttle Team</p></td></tr></table></body></html>"""
 
 
 # ---------- Admin auth ----------
@@ -538,15 +677,45 @@ async def analytics(month: Optional[str] = None, admin=Depends(require_admin)):
 
     avg_occ = round(occ_sum / max(1, cells), 1) if total > 0 else 0.0
 
+    # Direction split — per day, aggregate UP (Chashara→Rampura) and DOWN
+    # (Rampura→Chashara) with capacity = 3 trips × 36 seats = 108 per direction.
+    up_ids = [t["id"] for t in TRIPS if t["direction"] == "up"]
+    down_ids = [t["id"] for t in TRIPS if t["direction"] == "down"]
+    dir_capacity = CAPACITY * 3
+    direction_summary = {}
+    for d in DAYS:
+        up_trips = {tid: heat[d][tid] for tid in up_ids}
+        down_trips = {tid: heat[d][tid] for tid in down_ids}
+        up_total = sum(up_trips.values())
+        down_total = sum(down_trips.values())
+        direction_summary[d] = {
+            "up": {
+                "label": "Chashara → Rampura",
+                "trips": up_trips,
+                "total": up_total,
+                "capacity": dir_capacity,
+                "occupancy_pct": round(min(100.0, up_total * 100 / dir_capacity), 1),
+            },
+            "down": {
+                "label": "Rampura → Chashara",
+                "trips": down_trips,
+                "total": down_total,
+                "capacity": dir_capacity,
+                "occupancy_pct": round(min(100.0, down_total * 100 / dir_capacity), 1),
+            },
+        }
+
     return {
         "total_respondents": total,
         "revenue": revenue,
         "average_occupancy_pct": avg_occ,
         "capacity": CAPACITY,
+        "direction_capacity": dir_capacity,
         "day_demand": day_demand,
         "trip_demand": trip_demand,
         "trip_occupancy": trip_occupancy,
         "heatmap": heat,
+        "direction_summary": direction_summary,
         "route_demand": route_demand,
         "plan_split": plan_split,
         "fare_agreed_count": fare_agreed_count,
@@ -672,6 +841,80 @@ async def ai_forecast(month: Optional[str] = None, admin=Depends(require_admin))
         }
 
 
+# ---------- Admin: semester + schedule ----------
+@api.get("/admin/semester-config")
+async def get_semester_config(admin=Depends(require_admin)):
+    doc = await db.semester_config.find_one({"_key": "current"}, {"_id": 0}) or {}
+    return {
+        "label": doc.get("label", DEFAULT_SEMESTER_LABEL),
+        "start_date": doc.get("start_date", DEFAULT_SEMESTER_START),
+        "end_date": doc.get("end_date", DEFAULT_SEMESTER_END),
+    }
+
+
+@api.post("/admin/semester-config")
+async def save_semester_config(p: SemesterConfig, admin=Depends(require_admin)):
+    try:
+        s = parse_iso_date(p.start_date)
+        e = parse_iso_date(p.end_date)
+    except Exception:
+        raise HTTPException(400, "Dates must be YYYY-MM-DD")
+    if e < s:
+        raise HTTPException(400, "End date must be after start date")
+    await db.semester_config.update_one(
+        {"_key": "current"},
+        {"$set": {"_key": "current", "label": p.label,
+                  "start_date": p.start_date, "end_date": p.end_date,
+                  "updated_at": datetime.now(timezone.utc).isoformat()}},
+        upsert=True,
+    )
+    return {"status": "ok"}
+
+
+@api.get("/admin/schedule")
+async def get_schedule(year: int, month: int, admin=Depends(require_admin)):
+    if month < 1 or month > 12:
+        raise HTTPException(400, "month must be 1-12")
+    first = date(year, month, 1)
+    last = (date(year + 1, 1, 1) - timedelta(days=1)) if month == 12 else (date(year, month + 1, 1) - timedelta(days=1))
+    overrides = await db.working_day_overrides.find(
+        {"date": {"$gte": first.isoformat(), "$lte": last.isoformat()}}, {"_id": 0}
+    ).to_list(None)
+    override_map = {o["date"]: o for o in overrides}
+    dates = []
+    for d in daterange(first, last):
+        iso = d.isoformat()
+        weekday_idx = d.weekday()
+        default_working = weekday_idx not in DEFAULT_OFF_WEEKDAYS
+        info = override_map.get(iso)
+        is_working = bool(info["is_working"]) if info else default_working
+        dates.append({
+            "date": iso,
+            "weekday": WEEKDAY_INDEX_TO_NAME[weekday_idx],
+            "is_weekend": weekday_idx in DEFAULT_OFF_WEEKDAYS,
+            "is_working": is_working,
+            "overridden": info is not None,
+        })
+    return {"year": year, "month": month, "dates": dates}
+
+
+@api.post("/admin/schedule")
+async def toggle_schedule(p: ScheduleToggle, admin=Depends(require_admin)):
+    try:
+        d = parse_iso_date(p.date)
+    except Exception:
+        raise HTTPException(400, "Invalid date")
+    if d.weekday() in DEFAULT_OFF_WEEKDAYS and p.is_working:
+        raise HTTPException(400, "Friday and Saturday are always off.")
+    await db.working_day_overrides.update_one(
+        {"date": p.date},
+        {"$set": {"date": p.date, "is_working": bool(p.is_working),
+                  "updated_at": datetime.now(timezone.utc).isoformat()}},
+        upsert=True,
+    )
+    return {"status": "ok", "date": p.date, "is_working": p.is_working}
+
+
 # ---------- Register ----------
 app.include_router(api)
 
@@ -687,7 +930,7 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
-logger = logging.getLogger("ewu-shuttle")
+logger = logging.getLogger("student-shuttle")
 
 
 @app.on_event("shutdown")

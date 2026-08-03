@@ -1,0 +1,30 @@
+{
+  "summary": "Iteration 2 end-to-end tested. Backend: 32/32 pytest cases pass (22 regression from iteration_1 updated for new pricing keys + 10 new iteration_2 cases covering /schedule/counts, /admin/semester-config GET+POST, /admin/schedule GET+POST with Fri/Sat guard, new pricing formula with day_counts/per_day_prices, analytics direction_summary + direction_capacity=108, and admin auth guard). Frontend: Landing shows 'Student Shuttle' with no 'EWU Shuttle' text; admin login email starts empty and default-credential hint removed; Survey step1 email placeholder is masked '2___-_-__-___@std.ewubd.edu' and invalid email returns the same masked message; Survey step6 fetches /schedule/counts and shows 'Across N working days — Fri/Sat & holidays excluded', scope 'YYYY-MM-DD → YYYY-MM-DD', and per-day 'rate × occ = subtotal'; switching Monthly → Semester recomputes (Sep-Dec 2026 semester = ৳7140 across 87 working days, Sunday ৳210×17=৳3570 & Monday ৳210×17=৳3570 for round-trip Sun+Mon selection with Sep 15 override active); Admin dashboard renders chart-direction-split with 5 day rows × 2 direction cards, each showing 3 trip counts, N/108 seats and % occupancy; new Schedule tab reveals semester config form (label/start/end/save) and 7-column calendar; ChevronLeft/Right step months; Sun-Thu cells clickable and toggle green↔pink; Fri/Sat cells disabled; month filter still recomputes direction split correctly.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/backend_test.py",
+    "/app/backend/tests/test_iteration2.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py is 939 lines — well past the 700-line threshold; recommend splitting into routers: public/, admin_auth/, admin_analytics/, admin_schedule/, admin_forecast/.",
+    "/api/admin/export/csv still writes stale columns 'Weeks', 'Weekly Total' which no longer exist on new survey docs (they were removed when compute_price changed). The CSV will show empty cells for those columns — replace with 'Working days in scope', 'Scope start', 'Scope end', 'Per-day breakdown JSON' for iteration 2 semantics.",
+    "build_confirmation_html references doc.get('weeks',0) which is no longer set on survey docs, so the emailed 'over {weeks} weeks' text will render as 'over 0 weeks'. Update the template to use working_days_total.",
+    "compute_price() silently drops days with empty trip lists — fine per current UI, but backend should reject a submission where a selected day has no trips to avoid surprising 0-price surveys.",
+    "/api/admin/schedule POST always writes an override document (even when the new state equals the default). Consider deleting the override row when is_working matches the weekday default to keep the collection tidy.",
+    "pytest.ini forces -n 2 --dist loadscope. Because tests share MongoDB state (e.g. semester_config document is mutated then restored in test_iteration2), running with parallel workers races test_config's semester_label assertion (observed once). Tests pass reliably with -n 0. Consider isolating semester_config mutation to a class-scoped worker or reverting immediately."
+  ],
+  "updated_files": [
+    "/app/backend/tests/backend_test.py",
+    "/app/backend/tests/test_iteration2.py"
+  ],
+  "success_rate": {"backend": "100% (32/32 sequential; race on 1 test under -n 2 due to shared semester_config mutation)", "frontend": "100%"},
+  "test_credentials": "admin@ewushuttle.com / Admin@123 (seeded).",
+  "seed_data_creation": "test_iteration2.py leaves an override on 2026-09-15 (is_working=false) so /schedule/counts?scope=monthly&month=2026-09 will return Tuesday=4/total=21 until the override is flipped back. It also seeds one survey for 2024-1-70-777@std.ewubd.edu. Iteration_1 tests also seed several surveys under 2026-02/03/04/05.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Backend tests split into /app/backend/tests/backend_test.py (regression) and /app/backend/tests/test_iteration2.py (new endpoints). Run sequentially with `python -m pytest backend/tests/ -n 0` to avoid the semester_config mutation race in test_semester_config_update_and_reject_invalid. Pricing formula: total = Σ rate × day_counts[day]; rate=round_trip if both UP+DOWN chosen, else one_way. Sep 2026 default counts: Sun4/Mon4/Tue5/Wed5/Thu4 = 22 working days. After test_iteration2 runs, Sep 15 stays flagged off → Tue=4 and total=21 until reset via POST /api/admin/schedule with is_working=true.",
+  "rca of the issue": "No functional bugs found. Only pre-existing tidy-up items (CSV/email template using retired 'weeks' & 'weekly_total' keys) and a test-suite race caused by parallel worker mutation of shared semester_config."
+}

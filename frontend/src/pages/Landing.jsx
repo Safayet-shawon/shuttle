@@ -22,7 +22,7 @@ export default function Landing() {
               <Bus className="w-5 h-5" />
             </div>
             <div>
-              <div className="font-display text-lg font-semibold leading-none">EWU Shuttle</div>
+              <div className="font-display text-lg font-semibold leading-none">Student Shuttle</div>
               <div className="text-[10px] tracking-[0.18em] uppercase text-[#7A8A82]">Fall 2026 pilot</div>
             </div>
           </Link>
@@ -289,7 +289,7 @@ export default function Landing() {
 
       <footer className="border-t border-[#E2E8E5] bg-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex flex-col sm:flex-row items-center justify-between gap-3 text-sm text-[#7A8A82]">
-          <div>© {new Date().getFullYear()} EWU Shuttle Pilot. Not affiliated commercially.</div>
+          <div>© {new Date().getFullYear()} Student Shuttle Pilot. Not affiliated commercially.</div>
           <div className="flex items-center gap-4">
             <span>Fall 2026</span>
             <span className="mono">@std.ewubd.edu</span>

@@ -7,6 +7,7 @@ import {
 import {
   Bus, LogOut, Download, RefreshCcw, Play, Pause, KeyRound, Ban,
   Sparkles, Users, TrendingUp, Percent, Zap, AlertTriangle, Trash2, FileText, Loader2,
+  ArrowUpRight, ArrowDownLeft, CalendarDays,
 } from "lucide-react";
 import { toast } from "sonner";
 import { api, currentMonth, humanMonth } from "@/lib/api";
@@ -21,6 +22,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger, DialogDescription,
 } from "@/components/ui/dialog";
 import { ADMIN } from "@/constants/testIds";
+import ScheduleManager from "@/components/ScheduleManager";
 
 const CHART = ["#0F5132", "#2E7D54", "#5DA77F", "#9ECFBA", "#D1E8DD"];
 
@@ -168,7 +170,7 @@ export default function AdminDashboard() {
               <Bus className="w-5 h-5" />
             </div>
             <div>
-              <div className="font-display text-lg font-semibold leading-none">EWU Shuttle</div>
+              <div className="font-display text-lg font-semibold leading-none">Student Shuttle</div>
               <div className="text-[10px] tracking-[0.18em] uppercase text-[#7A8A82]">Admin dashboard</div>
             </div>
           </Link>
@@ -396,11 +398,51 @@ export default function AdminDashboard() {
           </div>
         </div>
 
+        {/* Direction split — per day, UP (Chashara→Rampura) vs DOWN (Rampura→Chashara)
+            against 3 × 36 = 108 seats per direction */}
+        {analytics.direction_summary && (
+          <div data-testid={ADMIN.directionSplit} className="rounded-2xl border border-[#E2E8E5] bg-white p-6">
+            <div className="mb-4">
+              <div className="eyebrow">Direction split</div>
+              <h3 className="mt-1 font-display text-xl font-semibold text-[#1A211D]">
+                Seats filled per day — up vs down
+              </h3>
+              <p className="text-sm text-[#7A8A82] mt-1">
+                Each direction has {analytics.direction_capacity} seats per day (3 trips × 36). Compare
+                Chashara → Rampura against Rampura → Chashara for every weekday.
+              </p>
+            </div>
+            <div className="grid gap-3">
+              {analytics.days_meta.map((d) => {
+                const row = analytics.direction_summary[d];
+                if (!row) return null;
+                return (
+                  <div key={d} className="rounded-xl border border-[#E2E8E5] p-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="font-display text-lg font-semibold text-[#1A211D]">{d}</div>
+                      <div className="text-xs text-[#7A8A82]">
+                        Total {row.up.total + row.down.total} / {row.up.capacity + row.down.capacity} seats
+                      </div>
+                    </div>
+                    <div className="grid sm:grid-cols-2 gap-3">
+                      <DirectionCard day={d} dir="up" data={row.up} icon={<ArrowUpRight className="w-4 h-4" />} />
+                      <DirectionCard day={d} dir="down" data={row.down} icon={<ArrowDownLeft className="w-4 h-4" />} />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {/* Tabs: Responses / Bans / Leads / Actions */}
         <Tabs defaultValue="responses" className="w-full">
-          <TabsList className="bg-white border border-[#E2E8E5] rounded-full p-1">
+          <TabsList className="bg-white border border-[#E2E8E5] rounded-full p-1 flex-wrap h-auto">
             <TabsTrigger value="responses" className="rounded-full data-[state=active]:bg-[#0F5132] data-[state=active]:text-white">
               Responses ({responses.length})
+            </TabsTrigger>
+            <TabsTrigger value="schedule" className="rounded-full data-[state=active]:bg-[#0F5132] data-[state=active]:text-white">
+              Schedule
             </TabsTrigger>
             <TabsTrigger value="bans" className="rounded-full data-[state=active]:bg-[#0F5132] data-[state=active]:text-white">Banned</TabsTrigger>
             <TabsTrigger value="leads" className="rounded-full data-[state=active]:bg-[#0F5132] data-[state=active]:text-white">Leads ({leads.length})</TabsTrigger>
@@ -457,6 +499,10 @@ export default function AdminDashboard() {
                 </table>
               </div>
             </div>
+          </TabsContent>
+
+          <TabsContent value="schedule" className="mt-4">
+            <ScheduleManager />
           </TabsContent>
 
           <TabsContent value="bans" className="mt-4">
@@ -636,13 +682,56 @@ function ActionCard({ icon, title, body, action }) {
   );
 }
 
+function DirectionCard({ day, dir, data, icon }) {
+  const isUp = dir === "up";
+  return (
+    <div
+      data-testid={ADMIN.directionCard(day, dir)}
+      className={`rounded-lg border p-4 ${isUp ? "border-[#D1E8DD] bg-[#F0EFE9]" : "border-[#FBCFE8] bg-[#FDF2F8]"}`}
+    >
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <div className={`w-8 h-8 rounded-full grid place-items-center ${isUp ? "bg-[#0F5132] text-white" : "bg-[#BE185D] text-white"}`}>
+            {icon}
+          </div>
+          <div>
+            <div className="text-[11px] uppercase tracking-wider text-[#7A8A82] font-semibold">
+              {isUp ? "Chashara → Rampura" : "Rampura → Chashara"}
+            </div>
+            <div className={`font-display text-lg font-semibold ${isUp ? "text-[#0F5132]" : "text-[#BE185D]"}`}>
+              {data.total} <span className="text-xs text-[#7A8A82] font-normal">/ {data.capacity} seats</span>
+            </div>
+          </div>
+        </div>
+        <div className={`text-sm font-semibold ${isUp ? "text-[#0F5132]" : "text-[#BE185D]"}`}>
+          {data.occupancy_pct}%
+        </div>
+      </div>
+      <div className="mt-3 h-1.5 rounded-full bg-white overflow-hidden">
+        <div
+          className={`h-full ${isUp ? "bg-[#0F5132]" : "bg-[#BE185D]"}`}
+          style={{ width: `${Math.min(100, data.occupancy_pct)}%` }}
+        />
+      </div>
+      <div className="mt-3 grid grid-cols-3 gap-2 text-center">
+        {Object.entries(data.trips).map(([tid, count]) => (
+          <div key={tid} className="rounded-md bg-white border border-[#E2E8E5] p-1.5">
+            <div className="mono text-[10px] text-[#7A8A82]">{tid}</div>
+            <div className="text-sm font-semibold text-[#1A211D]">{count}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function BanForm({ onSubmit }) {
   const [v, setV] = useState("");
   return (
     <div className="flex gap-2 mt-2">
       <Input
         data-testid={ADMIN.banEmail}
-        placeholder="2022-1-80-014@std.ewubd.edu"
+        placeholder="2___-_-__-___@std.ewubd.edu"
         value={v}
         onChange={(e) => setV(e.target.value)}
         className="mono h-11 rounded-xl border-[#E2E8E5]"
