@@ -22,7 +22,16 @@ AI-powered demand forecast (Claude Sonnet 5).
 - Dynamic aggregation only; no hardcoded numbers anywhere in the dashboard
 - Test-vs-live survey mode; test rows flagged pink in CSV
 
-## What's implemented (Feb 2026)
+## What's implemented (Feb 2026, iteration 2)
+- **Iteration 1** — Full survey wizard, admin dashboard, Resend confirmations, Claude Sonnet 5 AI forecast
+- **Iteration 2** — Rebranded `EWU Shuttle` → `Student Shuttle` (university reference stays only in student-email regex)
+  - Masked student-ID email example: `2___-_-__-___@std.ewubd.edu` (no real IDs shown on the wizard)
+  - Admin login email input is blank by default; default-credential hint removed
+  - **Direction split widget** on admin dashboard — per weekday, two sub-cards: Chashara→Rampura (UP1/UP2/UP3, total vs 108 seats) and Rampura→Chashara (DOWN1/DOWN2/DOWN3, total vs 108 seats)
+  - **Schedule manager tab** — admin sets semester start/end + toggles per-date working/off on a calendar grid (Fri/Sat auto-off)
+  - **Working-day-aware pricing** — total = Σ (per-day rate × count of working occurrences of that weekday in scope); frontend live-fetches `/api/schedule/counts` for preview
+  - New backend endpoints: `/api/schedule/counts`, `/api/admin/semester-config`, `/api/admin/schedule`
+  - Analytics response now carries `direction_summary` and `direction_capacity`
 - **Backend** (`/app/backend/server.py`) — FastAPI + Mongo + JWT admin auth
   - `/api/config`, `/api/survey/lookup`, `/api/survey/submit`
   - `/api/admin/login`, `/change-password`, `/survey/toggle`, `/reset`,

@@ -499,7 +499,7 @@ def build_confirmation_html(doc: Dict[str, Any]) -> str:
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
 <tr><td style="padding:10px 14px;border-bottom:1px solid #E2E8E5;color:#7A8A82;font-size:13px;">Route</td><td style="padding:10px 14px;border-bottom:1px solid #E2E8E5;color:#1A211D;font-size:13px;">{doc.get('route_label','')}</td></tr>
 <tr><td style="padding:10px 14px;border-bottom:1px solid #E2E8E5;color:#7A8A82;font-size:13px;">Payment plan</td><td style="padding:10px 14px;border-bottom:1px solid #E2E8E5;color:#1A211D;font-size:13px;">{doc.get('payment_plan','').title()}</td></tr>
-<tr><td style="padding:10px 14px;border-bottom:1px solid #E2E8E5;color:#7A8A82;font-size:13px;">Estimated total</td><td style="padding:10px 14px;border-bottom:1px solid #E2E8E5;color:#1A211D;font-size:13px;">৳ {int(doc.get('total_price',0))} over {doc.get('weeks',0)} weeks</td></tr>
+<tr><td style="padding:10px 14px;border-bottom:1px solid #E2E8E5;color:#7A8A82;font-size:13px;">Estimated total</td><td style="padding:10px 14px;border-bottom:1px solid #E2E8E5;color:#1A211D;font-size:13px;">৳ {int(doc.get('total_price',0))} over {doc.get('working_days_total',0)} working days</td></tr>
 {rows}</table>
 <p style="color:#7A8A82;font-size:12px;margin-top:24px;">If you didn't submit this response, reply to this email so we can remove it. — Student Shuttle Team</p></td></tr></table></body></html>"""
 
@@ -748,22 +748,29 @@ async def export_csv(
     writer = csv.writer(output)
     writer.writerow([
         "Highlight", "Student ID", "Email", "Name", "Phone", "Month", "Year",
-        "Route", "Days", "Trips", "Payment Plan", "Weeks",
-        "One-way Rate", "Round-trip Rate", "Weekly Total", "Total Price (BDT)",
+        "Route", "Days", "Trips", "Payment Plan", "Working Days In Scope",
+        "One-way Rate", "Round-trip Rate", "Scope Start", "Scope End",
+        "Per-day Breakdown", "Total Price (BDT)",
         "Fare Agreed", "Proposed Fare", "Created At",
     ])
     for s in surveys:
         trips_str = " | ".join(
             f"{d}: {','.join(t)}" for d, t in (s.get("trips_per_day") or {}).items() if t
         )
+        per_day_str = " | ".join(
+            f"{d}:৳{v.get('rate','')}×{v.get('occurrences','')}=৳{v.get('subtotal','')}"
+            for d, v in (s.get("per_day_prices") or {}).items()
+            if isinstance(v, dict)
+        )
         writer.writerow([
             "PINK — TEST DATA" if s.get("is_test_data") else "REAL",
             s.get("student_id", ""), s.get("email", ""), s.get("name", ""),
             s.get("phone", ""), s.get("month", ""), s.get("year", ""),
             s.get("route_label", ""), ",".join(s.get("days", [])), trips_str,
-            s.get("payment_plan", ""), s.get("weeks", ""),
+            s.get("payment_plan", ""), s.get("working_days_total", ""),
             s.get("one_way_rate", ""), s.get("round_trip_rate", ""),
-            s.get("weekly_total", ""), s.get("total_price", ""),
+            s.get("scope_start", ""), s.get("scope_end", ""),
+            per_day_str, s.get("total_price", ""),
             "Yes" if s.get("fare_agreed") else "No",
             s.get("proposed_fare", "") if s.get("proposed_fare") is not None else "",
             s.get("created_at", ""),
